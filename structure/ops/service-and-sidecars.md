@@ -434,8 +434,8 @@ or the post-install refresh): the manager's `ocx start` child cannot join it, an
 through the repair's health wait keeps that proxy from starting (#5760). The recovery decision
 is made again after the release, and the lease is re-acquired before each fallback's ownership
 re-read so a claim landing in the unleased window is vetoed rather than killed unleased.
-Direct recovery retains the lease until readiness or its bounded deadline. The normal successful manual-runtime update still prints the existing
-restart hint.
+Direct recovery retains the lease until readiness or its bounded deadline. If acquisition fails, Node and Bun return false before owner inspection or spawn and print static manual repair/start guidance without the error's details.
+The normal successful manual-runtime update still prints the existing restart hint.
 
 Every updater lane makes the same exception where the service manager starts the proxy outside
 the updater's process tree, so that proxy has to take the lease itself; held through the

@@ -573,7 +573,10 @@ export async function runUpdate(): Promise<void> {
   /** `"vetoed"`: another owner holds the runtime, so not starting is the correct outcome. */
   const startProxyDirectly = async (): Promise<boolean | "vetoed"> => {
     // Every caller, including error recovery, owns the lock and fresh home proof here.
-    mutation.reacquire();
+    try { mutation.reacquire(); } catch {
+      console.warn("⚠️  Recovery could not acquire runtime ownership; run 'ocx service repair' or 'ocx start' manually after the other operation finishes.");
+      return false;
+    }
     if (!homePolicy.check()) return "vetoed";
     const ownership = await resolvedRuntimeOwnership();
     const supervision = observeSupervision();

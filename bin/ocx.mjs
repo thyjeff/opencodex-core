@@ -498,7 +498,10 @@ function runPackageManagerSelfUpdate(manager) {
 
   /** Returns true, false, or "vetoed" when another owner holds the runtime (not a failure). */
   function startProxyDirectly() {
-    reacquireUpdateLease();
+    try { reacquireUpdateLease(); } catch {
+      console.warn("opencodex: recovery could not acquire runtime ownership; run 'ocx service repair' or 'ocx start' manually after the other operation finishes.");
+      return false;
+    }
     if (!homePolicy.check()) return "vetoed";
     const currentOwnership = readOwnership();
     const supervision = observeSupervision();

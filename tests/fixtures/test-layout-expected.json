@@ -1278,6 +1278,7 @@
   "update-service-home.test.ts": "update",
   "update-service-home-policy.test.ts": "update",
   "update-home-recovery.test.ts": "update",
+  "update-recovery-authority.test.ts": "update",
   "update-home-launcher.test.ts": "update",
   "update-home-worker.test.ts": "update",
   "update-stop-classification.test.ts": "update", "update-stop-first.test.ts": "update",

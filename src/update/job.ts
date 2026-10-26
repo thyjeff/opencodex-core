@@ -197,11 +197,8 @@ async function strictRuntimePortAvailable(port: number, hostname = "127.0.0.1"):
   return spawnBindProbe(process.execPath, script);
 }
 
-/**
- * Wait until netstat reports no LISTEN owners on `port` AND the start runtime
- * can bind. Dead PIDs still appear as holders while the ghost TCB lives;
- * SetTcpEntry is a no-op without elevation (rc 317), so wait them out.
- */
+/** Wait for no LISTEN owners plus a bindable port. Dead PIDs retain ghost TCBs;
+ * SetTcpEntry needs elevation (rc 317 otherwise), so wait them out. */
 async function waitForGhostListenClear(
   port: number,
   hostname: string,
@@ -209,6 +206,7 @@ async function waitForGhostListenClear(
   timeoutMs: number,
   sleep: (ms: number) => Promise<void>,
   aliveFn: (pid: number) => boolean = isProcessAlive,
+  mayMutateFn: () => boolean = () => true,
 ): Promise<{ ok: boolean; accessDenied: boolean }> {
   const deadline = Date.now() + timeoutMs;
   let accessDenied = false;
@@ -217,6 +215,7 @@ async function waitForGhostListenClear(
     const liveHolders = holders.filter(pid => aliveFn(pid));
     // Never SetTcpEntry while a live process still owns the port (foreign or ocx).
     if (process.platform === "win32" && liveHolders.length === 0) {
+      if (!mayMutateFn()) return { ok: false, accessDenied };
       try {
         const drop = dropWindowsTcpRowsForLocalPort(port);
         if (drop.accessDenied > 0) accessDenied = true;
@@ -229,7 +228,6 @@ async function waitForGhostListenClear(
   }
   return { ok: false, accessDenied };
 }
-
 function packageLauncherPath(): string {
   // The launcher is <pkg-root>/bin/ocx.mjs. After `npm install -g`, import.meta.url
   // can still point at npm's renamed temp tree — prefer the live package path then.
@@ -1307,7 +1305,8 @@ async function restartAfterUpdate(
     // Injected spawnStart is the unit-test seam — skip the long OS wait.
     if (!io.spawnStart) {
       const sleep = io.sleepMs ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
-      const cleared = await waitForGhostListenClear(port, hostname, listPids, 90_000, sleep);
+      const cleared = await waitForGhostListenClear(port, hostname, listPids, 90_000, sleep, aliveFn, reclaimGate);
+      if (!reclaimGate()) return false;
       if (cleared.accessDenied) {
         updateJob(job, {}, "SetTcpEntry is non-elevated (access denied); relying on OS ghost-LISTEN expiry.");
       }
@@ -1383,8 +1382,9 @@ async function restartAfterUpdate(
       hostname,
       listPids,
       attempt === 1 ? (freed ? 15_000 : 5_000) : 30_000,
-      sleep,
+      sleep, aliveFn, reclaimGate,
     );
+    if (!reclaimGate()) return false;
     if (!ready.ok) {
       updateJob(
         job,

@@ -45,6 +45,8 @@ The Node launcher, Bun updater and dashboard worker use the same transition poli
 lease themselves and recheck both home authority and runtime ownership before spawning, including
 on failed-update recovery. Matching-home service refresh runs unleased; home/owner evidence is
 checked again immediately before manager recovery. A distinct refusal never permits direct fallback.
+If direct recovery cannot reacquire the ownership lease, both CLI lanes return failure with static
+manual repair/start guidance, without inspecting owners or starting another proxy.
 An initially unknown service home selects a package-only transaction: no proxy/tray stop, service
 refresh, shim repair or direct start. Success prints the static refusal and manual restart guidance;
 the dashboard records success with `restarted: false`. Package replacement still requires stable
@@ -124,6 +126,8 @@ persistence; the executable and argument array retain the actual launcher path, 
 
 Home authority is checked before initial reclaim, after releasing the repair lease, before manager
 recovery, after direct-fallback lease reacquisition and at pinned-start preparation/send boundaries.
+Both ghost-listener waits share reclaim's latched authority gate before each TCP-row deletion;
+a denial immediately returns the existing restart refusal, including after a transient re-match.
 The manager helper checks independently after lease release, immediately before contacting the
 manager, and returns distinct `refused` for foreign or unknown homes; callers cannot treat this as
 an ordinary failed restart. `src/update/job-windows-restart.ts` owns the unchanged scoped Windows
@@ -169,6 +173,8 @@ service-stop authority and matching-home recovery. Manager, probe and process si
 `tests/update/update-service-home-policy.test.ts` covers schema/capability validation and transition
 semantics; `tests/update/update-home-launcher.test.ts` and `tests/update/update-home-recovery.test.ts`
 exercise the actual Node/Bun helper bodies with injected lease, manager, owner and spawn boundaries.
+`tests/update/update-recovery-authority.test.ts` executes both ghost-wait call paths and CLI lease
+refusals with injected OS I/O, including mid-wait home changes and latched transient denials.
 The launcher suite also runs the complete Node update function in an isolated Node child with
 replacement/control I/O intercepted; `tests/update/update-bun-ownership-lease.test.ts` runs the actual
 Bun updater child. Both enforce the delegated baseline before replacement, retain stable-unknown
