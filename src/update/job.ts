@@ -877,27 +877,25 @@ export function summarizeCommandOutput(
   return parts.join(" · ");
 }
 
-/**
- * Tear down anything that would make `ocx start` exit 1 with "already running"
- * (service wrapper respawn, stale pidfile + live /healthz) before a pinned spawn.
- */
+/** Clear wrappers, stale state and verified ocx listeners before a pinned spawn. */
 function preparePortForPinnedStart(
-  job: UpdateJobState,
-  port: number,
-  listPids: (port: number) => number[],
-  aliveFn: (pid: number) => boolean,
+  job: UpdateJobState, port: number,
+  listPids: (port: number) => number[], aliveFn: (pid: number) => boolean,
   verifyOcx: (pid: number) => number | null = verifyPidIdentity,
   stopServiceWrappers: () => void = () => {},
-): void {
+  mayMutateFn: () => boolean = () => true,
+): false | void {
+  if (!mayMutateFn()) return false;
   stopServiceWrappers();
   const pid = readPid();
   if (pid) {
     updateJob(job, {}, `Clearing pre-start proxy PID ${pid} before pinned start.`);
+    if (!mayMutateFn()) return false;
     try { killProxy(pid); } catch { /* best-effort */ }
-    removePid(pid);
-  } else {
-    removePid();
   }
+  if (!mayMutateFn()) return false;
+  removePid(pid ?? undefined);
+  if (!mayMutateFn()) return false;
   removeRuntimePort();
   for (const holder of listPids(port)) {
     if (holder === process.pid || !aliveFn(holder)) continue;
@@ -910,11 +908,13 @@ function preparePortForPinnedStart(
       continue;
     }
     updateJob(job, {}, `Stopping live ocx listen holder PID ${holder} on port ${port} before pinned start.`);
+    if (!mayMutateFn()) return false;
     try { killProxy(holder); } catch { /* best-effort */ }
   }
   // Match reclaimListenPort: never SetTcpEntry while a live holder remains.
   const liveRemain = listPids(port).filter(pid => pid !== process.pid && aliveFn(pid));
   if (process.platform === "win32" && liveRemain.length === 0) {
+    if (!mayMutateFn()) return false;
     try { dropWindowsTcpRowsForLocalPort(port); } catch { /* best-effort */ }
   }
 }
@@ -1132,7 +1132,7 @@ async function restartAfterUpdate(
     }
     return [...allow];
   };
-  // Latched reclaim gate: a mid-wait denial stays denied for this job's waits.
+  // A reclaim denial stays latched across preparation and this job's waits.
   let reclaimDenied = false;
   const reclaimGate = () => {
     try { reclaimDenied ||= !homePolicy.check(); } catch { reclaimDenied = true; }
@@ -1376,7 +1376,7 @@ async function restartAfterUpdate(
       lastChild = null;
     }
     if (!homePolicy.check()) return false;
-    preparePort(job, port, listPids, aliveFn, verifyOcx, serviceInstalled && homePolicy.serviceAllowed ? (io.stopServiceWrappersFn ?? stopWindowsServiceWrappersBestEffort) : undefined);
+    if (preparePort(job, port, listPids, aliveFn, verifyOcx, serviceInstalled && homePolicy.serviceAllowed ? (io.stopServiceWrappersFn ?? stopWindowsServiceWrappersBestEffort) : undefined, reclaimGate) === false) return false;
     const ready = await waitForGhost(
       port,
       hostname,

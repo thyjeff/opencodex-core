@@ -126,8 +126,10 @@ persistence; the executable and argument array retain the actual launcher path, 
 
 Home authority is checked before initial reclaim, after releasing the repair lease, before manager
 recovery, after direct-fallback lease reacquisition and at pinned-start preparation/send boundaries.
-Both ghost-listener waits share reclaim's latched authority gate before each TCP-row deletion;
-a denial immediately returns the existing restart refusal, including after a transient re-match.
+Pinned-start preparation and both ghost-listener waits share reclaim's latched authority gate.
+Preparation rechecks before wrapper cleanup, each PID kill, PID/runtime-state removal and TCP-row
+deletion; the waits recheck before each TCP-row deletion. A denial immediately returns the existing
+restart refusal, including after a transient re-match; void-returning preparation overrides remain valid.
 The manager helper checks independently after lease release, immediately before contacting the
 manager, and returns distinct `refused` for foreign or unknown homes; callers cannot treat this as
 an ordinary failed restart. `src/update/job-windows-restart.ts` owns the unchanged scoped Windows
@@ -173,8 +175,9 @@ service-stop authority and matching-home recovery. Manager, probe and process si
 `tests/update/update-service-home-policy.test.ts` covers schema/capability validation and transition
 semantics; `tests/update/update-home-launcher.test.ts` and `tests/update/update-home-recovery.test.ts`
 exercise the actual Node/Bun helper bodies with injected lease, manager, owner and spawn boundaries.
-`tests/update/update-recovery-authority.test.ts` executes both ghost-wait call paths and CLI lease
-refusals with injected OS I/O, including mid-wait home changes and latched transient denials.
+`tests/update/update-recovery-authority.test.ts` executes the production pinned-preparation body,
+both ghost-wait call paths and CLI lease refusals with injected OS I/O, including home changes
+at preparation mutation boundaries, mid-wait changes and latched transient denials.
 The launcher suite also runs the complete Node update function in an isolated Node child with
 replacement/control I/O intercepted; `tests/update/update-bun-ownership-lease.test.ts` runs the actual
 Bun updater child. Both enforce the delegated baseline before replacement, retain stable-unknown
